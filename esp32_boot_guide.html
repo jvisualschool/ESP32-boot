@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32-S3 부팅 마스터 가이드</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0b10;
+        --card-bg: rgba(255, 255, 255, 0.03);
+        --card-border: rgba(255, 255, 255, 0.1);
+        --primary: #00ffa3;
+        --secondary: #00d4ff;
+        --accent: #ff007a;
+        --text-main: #e0e0e0;
+        --text-dim: #a0a0a0;
+        --terminal-bg: #15181e;
+        --glass: rgba(255, 255, 255, 0.05);
+        --font-main: "Inter", sans-serif;
+        --font-heading: "Outfit", sans-serif;
+        --font-mono: "JetBrains Mono", monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background-color: var(--bg);
+        color: var(--text-main);
+        font-family: var(--font-main);
+        line-height: 1.6;
+        overflow-x: hidden;
+      }
+
+      /* --- Custom Scrollbar --- */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--bg);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--glass);
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--card-border);
+      }
+
+      /* --- Layout --- */
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 40px;
+      }
+
+      header {
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        background: radial-gradient(
+          circle at 50% 50%,
+          rgba(0, 255, 163, 0.05) 0%,
+          transparent 70%
+        );
+        text-align: center;
+      }
+
+      .hero-title {
+        font-family: var(--font-heading);
+        font-size: 5rem;
+        font-weight: 800;
+        margin-bottom: 20px;
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -2px;
+        animation: fadeIn 1s ease-out;
+      }
+
+      .hero-subtitle {
+        font-size: 1.25rem;
+        color: var(--text-dim);
+        max-width: 600px;
+        margin-bottom: 40px;
+        animation: fadeIn 1.5s ease-out;
+      }
+
+      /* --- Section Styling --- */
+      section {
+        padding: 100px 0;
+        opacity: 0;
+        transform: translateY(30px);
+        transition: all 0.8s ease-out;
+      }
+
+      section.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      h2 {
+        font-family: var(--font-heading);
+        font-size: 2.5rem;
+        margin-bottom: 40px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+
+      h2::before {
+        content: "";
+        display: inline-block;
+        width: 40px;
+        height: 4px;
+        background: var(--primary);
+        border-radius: 2px;
+      }
+
+      /* --- Metaphor Cards --- */
+      .metaphor-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        margin-top: 40px;
+      }
+
+      .card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 24px;
+        padding: 40px;
+        backdrop-filter: blur(10px);
+        transition:
+          transform 0.3s ease,
+          border-color 0.3s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-5px);
+        border-color: var(--primary);
+      }
+
+      .card h3 {
+        font-family: var(--font-heading);
+        font-size: 1.5rem;
+        margin-bottom: 15px;
+        color: var(--primary);
+      }
+
+      .routine-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--card-border);
+      }
+
+      .routine-item:last-child {
+        border-bottom: none;
+      }
+
+      .routine-left {
+        color: var(--text-dim);
+        font-weight: 400;
+      }
+
+      .routine-right {
+        color: var(--text-main);
+        font-weight: 600;
+      }
+
+      /* --- Interactive Terminal --- */
+      .terminal-container {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 30px;
+        align-items: start;
+      }
+
+      .terminal {
+        background: var(--terminal-bg);
+        border-radius: 16px;
+        padding: 20px;
+        font-family: var(--font-mono);
+        font-size: 0.9rem;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        border: 1px solid var(--card-border);
+        height: 500px;
+        overflow-y: auto;
+        position: relative;
+      }
+
+      .terminal-header {
+        position: sticky;
+        top: -20px;
+        background: var(--terminal-bg);
+        padding: 10px 0;
+        margin-bottom: 15px;
+        border-bottom: 1px solid var(--card-border);
+        display: flex;
+        gap: 8px;
+        z-index: 10;
+      }
+
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .red {
+        background: #ff5f56;
+      }
+      .yellow {
+        background: #ffbd2e;
+      }
+      .green {
+        background: #27c93f;
+      }
+
+      .log-line {
+        padding: 4px 10px;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: background 0.2s ease;
+        white-space: pre-wrap;
+        color: #d1d1d1;
+      }
+
+      .log-line:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .log-line.active {
+        background: rgba(0, 255, 163, 0.15);
+        color: var(--primary);
+        box-shadow: inset 2px 0 0 var(--primary);
+      }
+
+      .log-i {
+        color: #4ade80;
+      }
+      .log-w {
+        color: #facc15;
+      }
+      .log-e {
+        color: #f87171;
+      }
+      .log-time {
+        color: #60a5fa;
+        opacity: 0.7;
+      }
+
+      .explanation-panel {
+        position: sticky;
+        top: 20px;
+      }
+
+      .expl-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 20px;
+        padding: 30px;
+        min-height: 400px;
+        display: flex;
+        flex-direction: column;
+        animation: slideIn 0.3s ease-out;
+      }
+
+      .expl-tag {
+        display: inline-block;
+        background: var(--primary);
+        color: #000;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 50px;
+        margin-bottom: 15px;
+        text-transform: uppercase;
+      }
+
+      .expl-title {
+        font-family: var(--font-heading);
+        font-size: 1.5rem;
+        margin-bottom: 20px;
+      }
+
+      .expl-content {
+        font-size: 1rem;
+        color: var(--text-dim);
+        line-height: 1.7;
+      }
+
+      .expl-analogy {
+        margin-top: auto;
+        padding-top: 20px;
+        border-top: 1px solid var(--card-border);
+        font-style: italic;
+        color: var(--secondary);
+        font-size: 0.95rem;
+      }
+
+      /* --- Memory Map --- */
+      .memory-track {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 40px;
+      }
+
+      .memory-segment {
+        height: 60px;
+        background: var(--glass);
+        border: 1px solid var(--card-border);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        position: relative;
+        cursor: help;
+        transition: all 0.3s ease;
+      }
+
+      .memory-segment:hover {
+        border-color: var(--secondary);
+        background: rgba(0, 212, 255, 0.05);
+      }
+
+      .seg-addr {
+        font-family: var(--font-mono);
+        color: var(--secondary);
+        width: 120px;
+      }
+      .seg-name {
+        font-weight: 600;
+        flex-grow: 1;
+      }
+      .seg-size {
+        font-size: 0.8rem;
+        opacity: 0.6;
+      }
+
+      .seg-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        background: var(--secondary);
+        opacity: 0.1;
+        z-index: -1;
+        border-radius: 8px;
+      }
+
+      /* --- Comparison Dashboard --- */
+      .comp-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+      }
+
+      .comp-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        padding: 25px;
+        border-radius: 16px;
+        text-align: center;
+      }
+
+      .comp-val {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--primary);
+        font-family: var(--font-heading);
+      }
+
+      .comp-label {
+        font-size: 0.85rem;
+        color: var(--text-dim);
+        margin-bottom: 10px;
+      }
+
+      /* --- Footer --- */
+      footer {
+        padding: 60px 0;
+        text-align: center;
+        border-top: 1px solid var(--card-border);
+        color: var(--text-dim);
+        font-size: 0.9rem;
+      }
+
+      footer strong {
+        color: var(--primary);
+      }
+
+      /* --- Animations --- */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateX(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .hero-title {
+          font-size: 3rem;
+        }
+        .metaphor-grid,
+        .terminal-container {
+          grid-template-columns: 1fr;
+        }
+        .container {
+          padding: 0 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="container">
+        <h1 class="hero-title">ESP32-S3<br />BOOT JOURNEY</h1>
+        <p class="hero-subtitle">
+          전원을 켜는 순간부터 당신의 코드가 실행되기까지의 260ms, 그 경이로운
+          여정을 완벽하게 해석합니다.
+        </p>
+        <div style="display: flex; gap: 20px; justify-content: center">
+          <button
+            onclick="
+              document
+                .getElementById('intro')
+                .scrollIntoView({ behavior: 'smooth' })
+            "
+            style="
+              background: var(--primary);
+              color: #000;
+              border: none;
+              padding: 12px 30px;
+              border-radius: 50px;
+              font-weight: 700;
+              cursor: pointer;
+            "
+          >
+            학습 시작하기
+          </button>
+          <button
+            onclick="
+              document
+                .getElementById('terminal')
+                .scrollIntoView({ behavior: 'smooth' })
+            "
+            style="
+              background: transparent;
+              border: 1px solid var(--primary);
+              color: var(--primary);
+              padding: 12px 30px;
+              border-radius: 50px;
+              font-weight: 700;
+              cursor: pointer;
+            "
+          >
+            로그 분석기
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Section 1: Introduction -->
+      <section id="intro">
+        <h2>1. 부팅이란 무엇인가?</h2>
+        <p>
+          부팅(Booting)은 컴퓨터가 전원을 켜고 사용 가능한 상태가 되기까지의
+          모든 준비 과정을 말합니다. ESP32-S3는 단 0.26초 만에 이 모든 일을
+          끝내죠.
+        </p>
+
+        <div class="metaphor-grid">
+          <div class="card">
+            <h3>아침 루틴 비유</h3>
+            <div class="routine-item">
+              <span class="routine-left">알람 소리 듣기</span>
+              <span class="routine-right">전원 인가</span>
+            </div>
+            <div class="routine-item">
+              <span class="routine-left">눈 뜨기</span>
+              <span class="routine-right">ROM 부트로더 시작</span>
+            </div>
+            <div class="routine-item">
+              <span class="routine-left">화장실 가기</span>
+              <span class="routine-right">하드웨어 초기화</span>
+            </div>
+            <div class="routine-item">
+              <span class="routine-left">옷장에서 옷 꺼내기</span>
+              <span class="routine-right">메모리 로딩</span>
+            </div>
+            <div class="routine-item">
+              <span class="routine-left">출근 준비 완료</span>
+              <span class="routine-right">애플리케이션 실행</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>성능 지표</h3>
+            <div class="comp-grid" style="margin-top: 20px">
+              <div>
+                <div class="comp-label">총 소요 시간</div>
+                <div class="comp-val">260ms</div>
+              </div>
+              <div>
+                <div class="comp-label">전력 효율</div>
+                <div class="comp-val">최상</div>
+              </div>
+            </div>
+            <p
+              style="
+                margin-top: 20px;
+                font-size: 0.9rem;
+                color: var(--text-dim);
+              "
+            >
+              윈도우 PC가 30초 걸릴 때, ESP32는 그보다 약 115배나 더 빠르게
+              기상합니다.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: Interactive Terminal -->
+      <section id="terminal">
+        <h2>2. 실시간 로그 분석기</h2>
+        <p>
+          시리얼 모니터에 찍히는 외계어 같은 로그들, 이제 한 줄씩 클릭해서 그
+          의미를 파헤쳐 보세요.
+        </p>
+
+        <div class="terminal-container">
+          <div class="terminal" id="logContainer">
+            <div class="terminal-header">
+              <div class="dot red"></div>
+              <div class="dot yellow"></div>
+              <div class="dot green"></div>
+              <span
+                style="
+                  font-size: 0.7rem;
+                  color: var(--text-dim);
+                  margin-left: 10px;
+                "
+                >esp32s3_serial_monitor.log</span
+              >
+            </div>
+            <!-- Logs will be populated by JS -->
+          </div>
+
+          <div class="explanation-panel">
+            <div class="expl-card" id="explCard">
+              <div
+                id="explPlaceholder"
+                style="text-align: center; margin: auto"
+              >
+                <svg
+                  width="60"
+                  height="60"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--primary)"
+                  stroke-width="1"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+                <p style="margin-top: 20px; color: var(--text-dim)">
+                  왼쪽의 로그 라인을 클릭하면<br />상세 설명이 나타납니다.
+                </p>
+              </div>
+              <div id="explContent" style="display: none">
+                <div class="expl-tag" id="explTag">ROM BOOTLOADER</div>
+                <h3 class="expl-title" id="explTitle">
+                  ESP-ROM:esp32s3-20210327
+                </h3>
+                <div class="expl-content" id="explText">
+                  이 칩의 ROM은 2021년 3월 27일에 만들어졌습니다. 칩 제조 시
+                  내장되어 절대 변경되지 않는 DNA와 같은 영역입니다.
+                </div>
+                <div class="expl-analogy" id="explAnalogy">
+                  비유: 사람의 지문처럼 칩이 태어날 때부터 가지고 있는 고유
+                  정보입니다.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Memory Map -->
+      <section id="memory">
+        <h2>3. 메모리 세그먼트 (Image Segments)</h2>
+        <p>
+          프로그램은 단순한 하나의 덩어리가 아닙니다. 용도에 따라 여러 조각으로
+          나뉘어 책장(Flash)에서 책상(RAM)으로 옮겨집니다.
+        </p>
+
+        <div class="memory-track">
+          <div
+            class="memory-segment"
+            data-desc="loop() 같은 일반 함수들이 들어있는 메인 코드 영역입니다. Flash에서 직접 실행됩니다."
+          >
+            <span class="seg-addr">0x3C020020</span>
+            <span class="seg-name">Segment 0: 메인 코드 (Flash Map)</span>
+            <span class="seg-size">34 KB</span>
+            <div class="seg-fill" style="width: 30%"></div>
+          </div>
+          <div
+            class="memory-segment"
+            data-desc="전역 변수와 초기값이 있는 변수들이 저장됩니다. 가장 빈번하게 값이 바뀝니다."
+          >
+            <span class="seg-addr">0x3FC92000</span>
+            <span class="seg-name">Segment 1: 데이터 변수 (DRAM)</span>
+            <span class="seg-size">10 KB</span>
+            <div class="seg-fill" style="width: 10%"></div>
+          </div>
+          <div
+            class="memory-segment"
+            data-desc="인터럽트 핸들러나 Wi-Fi 핵심 코드 등 아주 빠른 응답이 필요한 코드가 위치합니다."
+          >
+            <span class="seg-addr">0x40374000</span>
+            <span class="seg-name">Segment 2: 고속 코드 (IRAM)</span>
+            <span class="seg-size">20 KB</span>
+            <div class="seg-fill" style="width: 20%"></div>
+          </div>
+          <div
+            class="memory-segment"
+            data-desc="이미지 데이터나 고정된 문자열 메시지 등이 들어있습니다."
+          >
+            <span class="seg-addr">0x42000020</span>
+            <span class="seg-name">Segment 3: 읽기 전용 (Flash Read)</span>
+            <span class="seg-size">88 KB</span>
+            <div class="seg-fill" style="width: 80%"></div>
+          </div>
+          <div
+            class="memory-segment"
+            data-desc="딥슬립 중에도 지워지지 않는 특수 메모리입니다."
+          >
+            <span class="seg-addr">0x50000000</span>
+            <span class="seg-name">Segment 5: RTC 메모리</span>
+            <span class="seg-size">32 Bytes</span>
+            <div class="seg-fill" style="width: 2%"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: Comparison -->
+      <section id="comparison">
+        <h2>4. 타임라인 대격돌</h2>
+        <div class="comp-grid">
+          <div class="comp-card">
+            <div class="comp-label">ESP32-S3</div>
+            <div class="comp-val">0.26초</div>
+            <p style="font-size: 0.8rem; margin-top: 10px">슈퍼카 급 가속</p>
+          </div>
+          <div class="comp-card">
+            <div class="comp-label">ESP8266</div>
+            <div class="comp-val">0.4초</div>
+            <p style="font-size: 0.8rem; margin-top: 10px">준중형 차 급</p>
+          </div>
+          <div class="comp-card">
+            <div class="comp-label">Raspberry Pi</div>
+            <div class="comp-val">20초</div>
+            <p style="font-size: 0.8rem; margin-top: 10px">화물 열차 급</p>
+          </div>
+          <div class="comp-card">
+            <div class="comp-label">Win 11 PC</div>
+            <div class="comp-val">40초+</div>
+            <p style="font-size: 0.8rem; margin-top: 10px">대형 선박 급</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container">
+        <p>
+          이 페이지는 <strong>Jinho Jung</strong>님의 ESP32-S3 부팅 가이드를
+          기반으로 제작되었습니다.
+        </p>
+        <p style="margin-top: 10px; opacity: 0.5">
+          © 2026 Antigravity Creative Guide
+        </p>
+      </div>
+    </footer>
+
+    <script>
+      // Log Data
+      const logs = [
+        {
+          t: "ROM",
+          l: "ESP-ROM:esp32s3-20210327",
+          d: "칩의 ROM 버전 정보입니다. 제조 시 고정된 DNA와 같습니다.",
+          a: "비유: 사람의 출생 신고일",
+        },
+        {
+          t: "ROM",
+          l: "rst:0x15 (USB_UART_CHIP_RESET)",
+          d: "리셋 원인을 설명합니다. 0x15는 USB를 통해 리셋되었음을 뜻합니다.",
+          a: "비유: 잠에서 깨어난 이유 (알람 벨소리)",
+        },
+        {
+          t: "ROM",
+          l: "boot:0x28 (SPI_FAST_FLASH_BOOT)",
+          d: "부트 모드입니다. Flash 메모리에서 프로그램을 읽어 실행할 준비를 마쳤습니다.",
+          a: "비유: 등교 수단 (도보, 버스 중 버스 선택)",
+        },
+        {
+          t: "BOOTLOADER",
+          l: "I (18) boot: ESP-IDF v5.5.2 2nd stage bootloader",
+          d: "2단계 부트로더가 시작되었습니다. 개발자가 만든 앱의 길잡이 역할을 합니다.",
+          a: "비유: 집 문을 나서서 길을 안내하는 가이드",
+        },
+        {
+          t: "PARTITION",
+          l: "I (40) boot: Partition Table:",
+          d: "Flash 메모리 지도를 읽기 시작합니다. 어디에 무엇을 저장할지 결정합니다.",
+          a: "비유: 도시의 토지 구획 정리",
+        },
+        {
+          t: "PARTITION",
+          l: "0 nvs              WiFi data        01 02",
+          d: "NVS 파티션을 찾았습니다. WiFi 비밀번호 같은 설정값이 저장됩니다.",
+          a: "비유: 비밀 금고 (영구 저장)",
+        },
+        {
+          t: "PARTITION",
+          l: "2 factory          factory app      00 00",
+          d: "메인 프로그램이 들어있는 Factory 파티션의 위치를 확인했습니다.",
+          a: "비유: 메인 창고 (가장 큰 공간)",
+        },
+        {
+          t: "APP LOAD",
+          l: "I (72) esp_image: segment 0: paddr=00010020...",
+          d: "칩 내부에서 앱의 첫 번째 조각을 메모리로 옮기기 시작합니다.",
+          a: "비유: 책상 위에 필요한 책을 펼쳐놓기",
+        },
+        {
+          t: "APP LOAD",
+          l: "I (132) boot: Loaded app from partition at offset 0x10000",
+          d: "앱 로딩 완료! 부팅 후 132ms가 지난 시점입니다.",
+          a: "비유: 모든 준비물 가방에 챙기기 완료",
+        },
+        {
+          t: "SYSTEM",
+          l: "I (143) cpu_start: Multicore app",
+          d: "2개의 CPU 코어를 모두 깨웠습니다. 이제부터 진짜 멀티태스킹의 시간입니다.",
+          a: "비유: 양손을 모두 사용하여 업무 시작",
+        },
+        {
+          t: "MEMORY",
+          l: "I (191) heap_init: Initializing. RAM available: 337 KiB",
+          d: "작업 공간인 '힙' 메모리를 초기화했습니다. 동적 변수를 사용할 수 있습니다.",
+          a: "비유: 빈 책상을 깨끗이 치워 작업 공간 확보",
+        },
+        {
+          t: "FLASH",
+          l: "I (219) spi_flash: detected chip: boya",
+          d: "Flash 메모리 칩 제조사를 감지했습니다. Boya社의 칩이네요.",
+          a: "비유: 보조배터리 브랜드 확인",
+        },
+        {
+          t: "USER APP",
+          l: "I (260) main_task: Calling app_main()",
+          d: "드디어! 당신이 짠 setup()과 loop()이 실행됩니다.",
+          a: "비유: 드디어 업무 시작! 첫 결재 서류 작성",
+        },
+      ];
+
+      const logContainer = document.getElementById("logContainer");
+      const explContent = document.getElementById("explContent");
+      const explPlaceholder = document.getElementById("explPlaceholder");
+      const explTag = document.getElementById("explTag");
+      const explTitle = document.getElementById("explTitle");
+      const explText = document.getElementById("explText");
+      const explAnalogy = document.getElementById("explAnalogy");
+
+      // Populate Logs
+      logs.forEach((log, index) => {
+        const line = document.createElement("div");
+        line.className = "log-line";
+
+        // Format time and level highlighting
+        let formatted = log.l;
+        if (formatted.startsWith("I (")) {
+          const timeMatch = formatted.match(/\((\d+)\)/);
+          const timeStr = timeMatch ? timeMatch[0] : "";
+          formatted = formatted.replace(
+            timeStr,
+            `<span class="log-time">${timeStr}</span>`,
+          );
+          formatted = formatted.replace("I ", '<span class="log-i">I </span>');
+        } else if (formatted.startsWith("W ")) {
+          formatted = formatted.replace("W ", '<span class="log-w">W </span>');
+        }
+
+        line.innerHTML = formatted;
+        line.onclick = () => showExplanation(index, line);
+        logContainer.appendChild(line);
+      });
+
+      function showExplanation(index, element) {
+        // UI Update
+        document
+          .querySelectorAll(".log-line")
+          .forEach((el) => el.classList.remove("active"));
+        element.classList.add("active");
+
+        const log = logs[index];
+        explPlaceholder.style.display = "none";
+        explContent.style.display = "flex";
+
+        explTag.innerText = log.t;
+        explTitle.innerText = log.l;
+        explText.innerText = log.d;
+        explAnalogy.innerText = log.a;
+
+        // Trigger re-animation
+        explContent.style.animation = "none";
+        explContent.offsetHeight; // trigger reflow
+        explContent.style.animation = "slideIn 0.3s ease-out";
+      }
+
+      // Intersection Observer for sections
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("visible");
+            }
+          });
+        },
+        { threshold: 0.1 },
+      );
+
+      document
+        .querySelectorAll("section")
+        .forEach((section) => observer.observe(section));
+
+      // Memory Segment Tooltips (for simple interactivity)
+      document.querySelectorAll(".memory-segment").forEach((seg) => {
+        seg.addEventListener("mouseenter", () => {
+          const desc = seg.getAttribute("data-desc");
+          explPlaceholder.style.display = "none";
+          explContent.style.display = "flex";
+          explTag.innerText = "MEMORY INFO";
+          explTitle.innerText = seg.querySelector(".seg-name").innerText;
+          explText.innerText = desc;
+          explAnalogy.innerText =
+            "주소: " + seg.querySelector(".seg-addr").innerText;
+        });
+      });
+    </script>
+  </body>
+</html>

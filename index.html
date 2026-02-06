@@ -1,0 +1,2067 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ESP32-S3 부팅 과정 완벽 가이드 - ROM 부트로더부터 애플리케이션 시작까지 심층 분석">
+    <meta property="og:title" content="ESP32-S3 부팅 과정 완벽 가이드">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <title>ESP32-S3 부팅 과정 완벽 가이드</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* 채도 낮춘 컬러 팔레트 (Muted/Desaturated) */
+            --primary: #94a3b8;   /* Slate 400 - was Neon Cyan */
+            --secondary: #64748b; /* Slate 500 - was Purple */
+            --success: #6b9e8a;   /* Muted Green - was Emerald */
+            --warning: #c4a568;   /* Muted Orange - was Amber */
+            --error: #bf7878;     /* Muted Red - was Red */
+            --dark: #0f172a;
+            --darker: #020617;
+            --light: #e2e8f0;     /* Slightly darker light for ease */
+            --gray: #64748b;
+            --border: #334155;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--darker) 0%, var(--dark) 100%);
+            color: var(--light);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* 헤더 */
+        .header {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .logo-text h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo-text p {
+            font-size: 0.875rem;
+            color: var(--gray);
+        }
+
+        /* 네비게이션 */
+        .nav-menu {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .nav-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            color: var(--light);
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.875rem;
+        }
+
+        .nav-btn:hover {
+            background: rgba(0, 212, 255, 0.1);
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .nav-btn.active {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-color: transparent;
+        }
+
+        /* 컨테이너 */
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 2rem;
+        }
+
+        /* 사이드바 */
+        .sidebar {
+            position: sticky;
+            top: 100px;
+            height: fit-content;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .sidebar h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .sidebar-menu {
+            list-style: none;
+        }
+
+        .sidebar-menu li {
+            margin: 0.5rem 0;
+        }
+
+        .sidebar-menu a {
+            color: var(--gray);
+            text-decoration: none;
+            display: block;
+            padding: 0.5rem;
+            border-radius: 6px;
+            transition: all 0.3s;
+            font-size: 0.875rem;
+        }
+
+        .sidebar-menu a:hover,
+        .sidebar-menu a.active {
+            background: rgba(0, 212, 255, 0.1);
+            color: var(--primary);
+            transform: translateX(5px);
+        }
+
+        /* 메인 콘텐츠 */
+        .main-content {
+            min-height: 80vh;
+        }
+
+        .chapter {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+            animation: fadeInUp 0.5s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .chapter-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .chapter-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .chapter-title h2 {
+            font-size: 1.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .chapter-title p {
+            color: var(--gray);
+            font-size: 0.875rem;
+        }
+
+        /* 로그 박스 */
+        .log-box {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 0.875rem;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .log-box::before {
+            content: 'Terminal';
+            position: absolute;
+            top: 0.5rem;
+            right: 1rem;
+            color: var(--gray);
+            font-size: 0.75rem;
+            font-family: system-ui;
+        }
+
+        .log-line {
+            margin: 0.25rem 0;
+            animation: typeLine 0.5s ease-out;
+        }
+
+        @keyframes typeLine {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .log-info { color: #10b981; }
+        .log-warning { color: #f59e0b; }
+        .log-error { color: #ef4444; }
+        .log-timestamp { color: #64748b; }
+
+        /* 코드 박스 */
+        .code-box {
+            background: #1e293b;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 0.875rem;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .code-box::before {
+            content: attr(data-lang);
+            position: absolute;
+            top: 0.5rem;
+            right: 1rem;
+            color: var(--gray);
+            font-size: 0.75rem;
+            font-family: system-ui;
+        }
+
+        .code-keyword { color: #c792ea; }
+        .code-function { color: #82aaff; }
+        .code-string { color: #c3e88d; }
+        .code-comment { color: #546e7a; }
+        .code-number { color: #f78c6c; }
+
+        /* 인포 박스 */
+        .info-box {
+            background: rgba(16, 185, 129, 0.1);
+            border-left: 4px solid var(--success);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .warning-box {
+            background: rgba(245, 158, 11, 0.1);
+            border-left: 4px solid var(--warning);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .error-box {
+            background: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid var(--error);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .box-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: bold;
+            margin-bottom: 0.75rem;
+        }
+
+        /* 테이블 */
+        .table-container {
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(30, 41, 59, 0.5);
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: rgba(0, 212, 255, 0.1);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* 타임라인 */
+        .timeline {
+            position: relative;
+            padding: 2rem 0;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 30px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, var(--primary), var(--secondary));
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-left: 80px;
+            margin-bottom: 2rem;
+        }
+
+        .timeline-marker {
+            position: absolute;
+            left: 0;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+
+        .timeline-content {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+
+        .timeline-content h4 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        /* 프로그레스 바 */
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 1rem 0;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            transition: width 1s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 1rem;
+            font-weight: bold;
+            font-size: 0.875rem;
+        }
+
+        /* 메모리 맵 */
+        .memory-map {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .memory-block {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--primary);
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+
+        .memory-block:hover {
+            background: rgba(0, 212, 255, 0.2);
+            transform: translateX(5px);
+        }
+
+        .memory-label {
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .memory-size {
+            color: var(--gray);
+            font-size: 0.875rem;
+        }
+
+        /* 퀴즈 */
+        .quiz-box {
+            background: rgba(121, 40, 202, 0.1);
+            border: 1px solid var(--secondary);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+
+        .quiz-question {
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin-bottom: 1.5rem;
+            color: var(--primary);
+        }
+
+        .quiz-options {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .quiz-option {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .quiz-option:hover {
+            background: rgba(0, 212, 255, 0.1);
+            border-color: var(--primary);
+            transform: translateX(5px);
+        }
+
+        .quiz-option.correct {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: var(--success);
+        }
+
+        .quiz-option.wrong {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: var(--error);
+        }
+
+        .quiz-result {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .quiz-result.show {
+            display: block;
+        }
+
+        /* 플로팅 버튼 */
+        .float-btn {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.5);
+            transition: all 0.3s;
+            z-index: 999;
+        }
+
+        .float-btn:hover {
+            transform: scale(1.1) rotate(360deg);
+        }
+
+        /* 반응형 */
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+            }
+
+            .nav-menu {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .container {
+                padding: 0 1rem;
+            }
+
+            .chapter {
+                padding: 1.5rem;
+            }
+
+            .timeline-item {
+                padding-left: 60px;
+            }
+
+            .timeline-marker {
+                width: 40px;
+                height: 40px;
+                font-size: 0.875rem;
+            }
+        }
+
+        /* 애니메이션 */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .slide-in {
+            animation: slideIn 0.5s ease-out;
+        }
+
+        /* 다크 모드 토글 */
+        .theme-toggle {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        /* 프린트 스타일 */
+        @media print {
+            .header, .sidebar, .float-btn, .nav-menu {
+                display: none;
+            }
+
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .chapter {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 헤더 -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon"><i data-lucide="zap"></i></div>
+                <div class="logo-text">
+                    <h1>ESP32-S3 부팅 마스터</h1>
+                    <p>초보자를 위한 완벽 가이드</p>
+                </div>
+            </div>
+            <div class="nav-menu">
+                <button class="nav-btn active" onclick="showAllChapters()">전체 보기</button>
+                <button class="nav-btn" onclick="showChapter(1)">부팅 개요</button>
+                <button class="nav-btn" onclick="showChapter(4)">파티션</button>
+                <button class="nav-btn" onclick="showChapter(7)">메모리</button>
+                <button class="nav-btn" onclick="showChapter(11)">문제 해결</button>
+                <button class="nav-btn" onclick="showChapter(12)">용어사전</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨테이너 -->
+    <div class="container">
+        <!-- 사이드바 -->
+        <aside class="sidebar">
+            <h3><i data-lucide="book-open" style="vertical-align: middle; margin-right: 8px; width: 18px;"></i> 목차</h3>
+            <ul class="sidebar-menu">
+                <li><a href="#hardware" onclick="scrollToHardware()"><i data-lucide="cpu" style="width:14px; vertical-align:middle;"></i> 하드웨어</a></li>
+                <li><a href="#chapter1" onclick="scrollToChapter(1)">1. 부팅이란?</a></li>
+                <li><a href="#chapter2" onclick="scrollToChapter(2)">2. ROM 부트로더</a></li>
+                <li><a href="#chapter3" onclick="scrollToChapter(3)">3. 2nd Stage 부트로더</a></li>
+                <li><a href="#chapter4" onclick="scrollToChapter(4)">4. 파티션 테이블</a></li>
+                <li><a href="#chapter5" onclick="scrollToChapter(5)">5. 세그먼트 로딩</a></li>
+                <li><a href="#chapter6" onclick="scrollToChapter(6)">6. CPU 초기화</a></li>
+                <li><a href="#chapter7" onclick="scrollToChapter(7)">7. 힙 초기화</a></li>
+                <li><a href="#chapter8" onclick="scrollToChapter(8)">8. Flash 감지</a></li>
+                <li><a href="#chapter9" onclick="scrollToChapter(9)">9. 앱 시작</a></li>
+                <li><a href="#chapter10" onclick="scrollToChapter(10)">10. 타임라인</a></li>
+                <li><a href="#chapter11" onclick="scrollToChapter(11)">11. 문제 해결</a></li>
+                <li><a href="#chapter12" onclick="scrollToChapter(12)">12. 용어사전</a></li>
+                <li><a href="#chapter13" onclick="scrollToChapter(13)">13. 전체 로그 보기</a></li>
+            </ul>
+
+            <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <p style="font-size: 0.75rem; color: var(--gray); display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="bar-chart-2" style="width: 14px;"></i> 학습 진행도
+                </p>
+                <div class="progress-bar" style="height: 20px; margin-top: 0.5rem;">
+                    <div class="progress-fill" id="learningProgress" style="width: 0%;">0%</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 메인 콘텐츠 -->
+        <main class="main-content">
+            <!-- 하드웨어 개요 -->
+            <section class="chapter" id="hardware">
+                <div class="chapter-header">
+                    <div class="chapter-number"><i data-lucide="cpu"></i></div>
+                    <div class="chapter-title">
+                        <h2>ESP32-S3 하드웨어 개요</h2>
+                        <p>보드 레이아웃 및 주요 스펙 확인</p>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 12px; border: 1px solid var(--border);">
+                        <h4 style="margin-bottom: 1rem; color: var(--primary); text-align: center;">Isometric View</h4>
+                        <img src="_esp32-s3-devkitc-1-v1.1-isometric.png" alt="ESP32-S3 DevKitC-1 Isometric" style="width: 100%; height: auto; border-radius: 8px;">
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: 12px; border: 1px solid var(--border);">
+                        <h4 style="margin-bottom: 1rem; color: var(--primary); text-align: center;">Pin Layout</h4>
+                        <div style="overflow: hidden; border-radius: 8px;">
+                             <img src="_esp32-s3_devkitc-1_pinlayout_v1.1.jpg" alt="ESP32-S3 DevKitC-1 Pin Layout" style="width: 100%; height: auto; transition: transform 0.3s; cursor: zoom-in;" onclick="this.style.transform = this.style.transform === 'scale(2)' ? 'scale(1)' : 'scale(2)'">
+                        </div>
+                        <p style="text-align: center; color: var(--gray); font-size: 0.8rem; margin-top: 0.5rem;">클릭하여 확대/축소</p>
+                    </div>
+                </div>
+
+                <h3 style="color: var(--primary); margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;"><i data-lucide="clipboard-list"></i> 하드웨어 스펙 (ESP32-S3-WROOM-1)</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 30%">항목</th>
+                                <th>상세 사양</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>SoC</strong></td>
+                                <td>Xtensa® Dual-Core 32-bit LX7 Microprocessor</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Clock Speed</strong></td>
+                                <td>Up to 240 MHz</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Memory</strong></td>
+                                <td>384 KB ROM, 512 KB Internal SRAM, 16 KB RTC SRAM</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Wireless</strong></td>
+                                <td>Wi-Fi 802.11 b/g/n (2.4 GHz) + Bluetooth 5 (LE) & Mesh</td>
+                            </tr>
+                            <tr>
+                                <td><strong>AI Acceleration</strong></td>
+                                <td>Vector Instructions support (Neural Network computing)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Peripherals</strong></td>
+                                <td>45 GPIOs, ADC, SPI, I2C, I2S, PWM, UART, RMT, TWAI®</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Interfaces</strong></td>
+                                <td>USB 1.1 OTG (Full-speed), JTAG (Built-in)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Chapter 1: 부팅이란 무엇인가? -->
+            <section class="chapter" id="chapter1" data-chapter="1">
+                <div class="chapter-header">
+                    <div class="chapter-number">1</div>
+                    <div class="chapter-title">
+                        <h2>부팅이란 무엇인가?</h2>
+                        <p>ESP32가 전원을 켜고 실행되기까지의 여정</p>
+                    </div>
+                </div>
+
+                <p style="font-size: 1.1rem; margin-bottom: 2rem;">
+                    <strong>부팅(Booting)</strong>은 컴퓨터가 전원을 켜고 사용 가능한 상태가 되기까지의 과정입니다.
+                </p>
+
+                <div class="info-box">
+                    <div class="box-title">
+                        <i data-lucide="lightbulb"></i> 쉽게 이해하기
+                    </div>
+                    <p>사람의 아침 루틴처럼 생각해보세요:</p>
+                    <ul style="margin-left: 2rem; margin-top: 1rem;">
+                        <li>알람 소리 듣기 → <strong>전원 인가</strong></li>
+                        <li>눈 뜨기 → <strong>ROM 부트로더 시작</strong></li>
+                        <li>화장실 가기 → <strong>하드웨어 초기화</strong></li>
+                        <li>옷장에서 옷 꺼내기 → <strong>프로그램 메모리 로딩</strong></li>
+                        <li>옷 입기 → <strong>메모리 설정</strong></li>
+                        <li>출근 준비 완료 → <strong>애플리케이션 실행</strong></li>
+                    </ul>
+                </div>
+
+                <h3 style="margin: 2rem 0 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;"><i data-lucide="timer"></i> ESP32-S3 부팅 속도</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>시스템</th>
+                                <th>부팅 시간</th>
+                                <th>ESP32 대비</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>ESP32-S3</strong></td>
+                                <td><strong style="color: var(--success);">0.26초</strong></td>
+                                <td><i data-lucide="check-circle" style="width: 14px; vertical-align: middle;"></i> 기준</td>
+                            </tr>
+                            <tr>
+                                <td>Raspberry Pi 4</td>
+                                <td>20초</td>
+                                <td>77배 느림</td>
+                            </tr>
+                            <tr>
+                                <td>Windows PC</td>
+                                <td>30-60초</td>
+                                <td>115-230배 느림</td>
+                            </tr>
+                            <tr>
+                                <td>스마트폰</td>
+                                <td>30-40초</td>
+                                <td>115-154배 느림</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question"><i data-lucide="target" style="vertical-align: middle; margin-right: 8px;"></i> 퀴즈: ESP32가 빠른 이유는?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">
+                            A. CPU가 매우 빠르기 때문에
+                        </div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">
+                            B. 메모리가 많기 때문에
+                        </div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">
+                            C. 단순한 시스템과 최적화된 부트로더
+                        </div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">
+                            D. OS가 있기 때문에
+                        </div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            <!-- Chapter 2: ROM 부트로더 -->
+            <section class="chapter" id="chapter2" data-chapter="2">
+                <div class="chapter-header">
+                    <div class="chapter-number">2</div>
+                    <div class="chapter-title">
+                        <h2>ROM 부트로더 - 칩의 첫 번째 숨결</h2>
+                        <p>제조 시 내장된 불변의 시작점</p>
+                    </div>
+                </div>
+
+                <h3 style="color: var(--primary); margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;"><i data-lucide="book-open"></i> 이 단계는 무엇인가?</h3>
+                <p>전원이 들어오면 <strong>가장 먼저 실행되는 코드</strong>입니다. 칩 제조 시 내장되어 있어서 절대 변경되지 않습니다.</p>
+
+                <div class="log-box">
+                    <div class="log-line">ESP-ROM:esp32s3-20210327</div>
+                    <div class="log-line">Build:Mar 27 2021</div>
+                    <div class="log-line">rst:<span class="log-warning">0x15</span> (USB_UART_CHIP_RESET),boot:<span class="log-info">0x28</span> (SPI_FAST_FLASH_BOOT)</div>
+                    <div class="log-line">Saved PC:0x40377786</div>
+                    <div class="log-line">SPIWP:0xee</div>
+                    <div class="log-line">mode:DIO, clock div:1</div>
+                    <div class="log-line">load:0x3fce2820,len:0x158c   (5,516 bytes)</div>
+                    <div class="log-line">load:0x403c8700,len:0xd24    (3,364 bytes)</div>
+                    <div class="log-line">load:0x403cb700,len:0x2f34   (12,084 bytes)</div>
+                    <div class="log-line">entry 0x403c8924</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="box-title">💡 상세 분석</div>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>rst:0x15:</strong> USB 연결이나 업로드로 인한 리셋입니다.</li>
+                        <li><strong>boot:0x28:</strong> Flash 메모리에서 부팅하는 일반 모드입니다.</li>
+                        <li><strong>Saved PC:</strong> 리셋 직전 CPU가 실행하던 주소(Program Counter)입니다.</li>
+                        <li><strong>load:</strong> 3개의 코드 조각을 Flash에서 RAM으로 복사하고 실행(entry)합니다.</li>
+                    </ul>
+                </div>
+
+                <h3 style="color: var(--primary); margin: 2rem 0 1rem;">🔍 리셋 원인 코드</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>코드</th>
+                                <th>이름</th>
+                                <th>의미</th>
+                                <th>언제 발생?</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>0x01</code></td>
+                                <td>POWERON</td>
+                                <td>전원 켬</td>
+                                <td><i data-lucide="plug" style="width:14px; vertical-align:middle;"></i> 전원 플러그 연결</td>
+                            </tr>
+                            <tr>
+                                <td><code>0x10</code></td>
+                                <td>RTCWDT_RTC</td>
+                                <td>전압 불안정/Brownout</td>
+                                <td><i data-lucide="zap-off" style="width:14px; vertical-align:middle;"></i> 전력 부족 시</td>
+                            </tr>
+                            <tr>
+                                <td><code>0x03</code></td>
+                                <td>SW_RESET</td>
+                                <td>소프트웨어 재시작</td>
+                                <td><i data-lucide="laptop" style="width:14px; vertical-align:middle;"></i> <code>ESP.restart()</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>0x0C</code></td>
+                                <td>WATCHDOG</td>
+                                <td>와치독 타이머</td>
+                                <td><i data-lucide="triangle-alert" style="width:14px; vertical-align:middle;"></i> 무한루프 발생</td>
+                            </tr>
+                            <tr style="background: rgba(0, 212, 255, 0.05);">
+                                <td><code>0x15</code></td>
+                                <td>USB_UART_RESET</td>
+                                <td>USB 리셋</td>
+                                <td><i data-lucide="smartphone" style="width:14px; vertical-align:middle;"></i> 프로그램 업로드</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="warning-box">
+                    <div class="box-title">
+                        <i data-lucide="triangle-alert"></i> 잘못되면 어떻게 되나?
+                    </div>
+                    <ul style="margin-left: 2rem; margin-top: 1rem;">
+                        <li><strong>계속 WATCHDOG 리셋 발생</strong> = 프로그램에 버그가 있음</li>
+                        <li><strong>무한 재부팅 루프</strong> = 심각한 코드 오류</li>
+                        <li><strong>DOWNLOAD 모드에서 멈춤</strong> = 부팅 버튼을 누른 상태로 켰을 가능성</li>
+                    </ul>
+                </div>
+
+                <div class="code-box" data-lang="C++" style="white-space: pre;">
+<span class="code-comment">// 리셋 원인 확인하기</span>
+<span class="code-keyword">void</span> <span class="code-function">setup</span>() {
+    Serial.<span class="code-function">begin</span>(<span class="code-number">115200</span>);
+    
+    <span class="code-keyword">int</span> resetReason = esp_reset_reason();
+    
+    <span class="code-keyword">switch</span>(resetReason) {
+        <span class="code-keyword">case</span> <span class="code-number">1</span>:
+            Serial.<span class="code-function">println</span>(<span class="code-string">"전원 켜짐"</span>);
+            <span class="code-keyword">break</span>;
+    }
+}
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question"><i data-lucide="target" style="vertical-align: middle; margin-right: 8px;"></i> 퀴즈: 칩에 내장되어 변경 불가능한 것은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. 2nd Stage 부트로더</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">B. ROM 부트로더</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">C. 파티션 테이블</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. 애플리케이션 프로필</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            <!-- Chapter 3: 2nd Stage 부트로더 -->
+            <section class="chapter" id="chapter3" data-chapter="3">
+                <div class="chapter-header">
+                    <div class="chapter-number">3</div>
+                    <div class="chapter-title">
+                        <h2>2nd Stage 부트로더</h2>
+                        <p>ESP-IDF 부트로더가 실행되어 하드웨어를 설정합니다.</p>
+                    </div>
+                </div>
+
+                <div class="log-box">
+                    <div class="log-line">I (18) boot: ESP-IDF v5.5.2 2nd stage bootloader</div>
+                    <div class="log-line">I (18) boot: compile time Feb  5 2026 14:16:34</div>
+                    <div class="log-line">I (18) boot: Multicore bootloader</div>
+                    <div class="log-line">I (18) boot: chip revision: v0.2</div>
+                    <div class="log-line">I (21) boot: efuse block revision: v1.3</div>
+                    <div class="log-line">I (25) boot.esp32s3: Boot SPI Speed : 80MHz</div>
+                    <div class="log-line">I (28) boot.esp32s3: SPI Mode       : DIO</div>
+                    <div class="log-line">I (36) boot: Enabling RNG early entropy source...</div>
+                    <div class="log-line">I (36) boot: SPI Flash: detected @0x10000000, size 4MB</div>
+                    <div class="log-line">I (38) boot: Initializing CPU: PRO and APP cores</div>
+                    <div class="log-line">I (38) boot: Initializing cache: D-Cache and I-Cache</div>
+                </div>
+
+                <div class="info-box">
+                    <div class="box-title"><i data-lucide="lightbulb"></i> 핵심 포인트</div>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>Multicore:</strong> 두 개의 코어(PRO, APP)를 모두 사용합니다.</li>
+                        <li><strong>Flash 속도:</strong> 80MHz DIO 모드 (안정적이고 빠름)</li>
+                        <li><strong>RNG 초기화:</strong> 보안(Wi-Fi 암호화 등)을 위해 난수 생성기를 일찍 켭니다.</li>
+                        <li><strong>eFuse:</strong> 칩 내부의 일회성 기록 메모리(보안 키 등) 버전을 확인합니다.</li>
+                        <li><strong>SPI Flash:</strong> 연결된 Flash 메모리의 크기를 감지합니다.</li>
+                        <li><strong>CPU/Cache 초기화:</strong> PRO 및 APP 코어와 데이터/명령어 캐시를 설정합니다.</li>
+                    </ul>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question"><i data-lucide="target" style="vertical-align: middle; margin-right: 8px;"></i> 퀴즈: 2nd Stage 부트로더(ESP-IDF)의 역할이 아닌 것은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. 하드웨어 초기화</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">B. 파티션 테이블 읽기</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">C. Wi-Fi 연결</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. 앱 이미지 로딩</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+
+
+            <!-- Chapter 4: 파티션 테이블 -->
+            <section class="chapter" id="chapter4" data-chapter="4">
+                <div class="chapter-header">
+                    <div class="chapter-number">4</div>
+                    <div class="chapter-title">
+                        <h2>파티션 테이블 - 저장 공간 지도</h2>
+                        <p>Flash 메모리를 어떻게 나눠 쓸지 정의</p>
+                    </div>
+                </div>
+
+                <p style="font-size: 1.1rem; margin-bottom: 2rem;">
+                    Flash 메모리를 <strong>어떻게 나눠 쓸지</strong> 확인합니다. 컴퓨터의 하드디스크 파티션(C:, D: 드라이브)과 같은 개념입니다.
+                </p>
+
+                <div class="log-box">
+                    <div class="log-line log-info">I (40) boot: Partition Table:</div>
+                    <div class="log-line log-info">I (43) boot: ## Label            Usage          Type ST Offset   Length</div>
+                    <div class="log-line log-info">I (49) boot:  0 nvs              WiFi data        01 02 00009000 00006000</div>
+                    <div class="log-line log-info">I (56) boot:  1 phy_init         RF data          01 01 0000f000 00001000</div>
+                    <div class="log-line log-info">I (62) boot:  2 factory          factory app      00 00 00010000 00100000</div>
+                    <div class="log-line log-info">I (69) boot: End of partition table</div>
+                </div>
+
+                <h3 style="color: var(--primary); margin: 2rem 0 1rem;">📊 파티션 맵 시각화</h3>
+                <div class="memory-map">
+                    <div class="memory-block" style="background: rgba(16, 185, 129, 0.1); border-color: var(--success);">
+                        <div>
+                            <div class="memory-label">0x0000 - Bootloader</div>
+                            <div style="color: var(--gray); font-size: 0.875rem;">부트로더 영역</div>
+                        </div>
+                        <div class="memory-size">32KB</div>
+                    </div>
+                    <div class="memory-block">
+                        <div>
+                            <div class="memory-label">0x9000 - NVS</div>
+                            <div style="color: var(--gray); font-size: 0.875rem;">Wi-Fi 설정 저장</div>
+                        </div>
+                        <div class="memory-size">24KB</div>
+                    </div>
+                    <div class="memory-block">
+                        <div>
+                            <div class="memory-label">0xF000 - PHY_INIT</div>
+                            <div style="color: var(--gray); font-size: 0.875rem;">무선 설정</div>
+                        </div>
+                        <div class="memory-size">4KB</div>
+                    </div>
+                    <div class="memory-block" style="background: rgba(0, 212, 255, 0.2); border-color: var(--primary);">
+                        <div>
+                            <div class="memory-label">0x10000 - FACTORY</div>
+                            <div style="color: var(--gray); font-size: 0.875rem;">내 프로그램</div>
+                        </div>
+                        <div class="memory-size">1024KB</div>
+                    </div>
+                    <div class="memory-block" style="background: rgba(100, 116, 139, 0.1); border-color: var(--gray);">
+                        <div>
+                            <div class="memory-label">0x110000 - Unused</div>
+                            <div style="color: var(--gray); font-size: 0.875rem;">미사용 공간</div>
+                        </div>
+                        <div class="memory-size">~900KB</div>
+                    </div>
+                </div>
+
+                <div class="code-box" data-lang="C++" style="white-space: pre;">
+<span class="code-comment">// NVS에 Wi-Fi 설정 저장하기</span>
+<span class="code-keyword">#include</span> <span class="code-string">&lt;Preferences.h&gt;</span>
+
+Preferences preferences;
+
+<span class="code-keyword">void</span> <span class="code-function">saveWiFi</span>() {
+    preferences.<span class="code-function">begin</span>(<span class="code-string">"wifi"</span>, <span class="code-keyword">false</span>);
+    preferences.<span class="code-function">putString</span>(<span class="code-string">"ssid"</span>, <span class="code-string">"MyWiFi"</span>);
+    preferences.<span class="code-function">putString</span>(<span class="code-string">"password"</span>, <span class="code-string">"12345678"</span>);
+    preferences.<span class="code-function">end</span>();
+    
+    Serial.<span class="code-function">println</span>(<span class="code-string">"Wi-Fi 설정 저장 완료!"</span>);
+}
+
+<span class="code-keyword">void</span> <span class="code-function">loadWiFi</span>() {
+    preferences.<span class="code-function">begin</span>(<span class="code-string">"wifi"</span>, <span class="code-keyword">true</span>);
+    String ssid = preferences.<span class="code-function">getString</span>(<span class="code-string">"ssid"</span>, <span class="code-string">""</span>);
+    String password = preferences.<span class="code-function">getString</span>(<span class="code-string">"password"</span>, <span class="code-string">""</span>);
+    preferences.<span class="code-function">end</span>();
+    
+    Serial.<span class="code-function">println</span>(<span class="code-string">"SSID: "</span> + ssid);
+}
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question">🎯 퀴즈: Wi-Fi 설정이나 사용자 데이터를 저장하는 파티션은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. factory</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">B. phy_init</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">C. nvs</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. bootloader</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            <!-- Chapter 5: 이미지 세그먼트 로딩 -->
+            <section class="chapter" id="chapter5" data-chapter="5">
+                <div class="chapter-header">
+                    <div class="chapter-number">5</div>
+                    <div class="chapter-title">
+                        <h2>이미지 세그먼트 로딩</h2>
+                        <p>Flash에서 RAM으로 프로그램을 복사합니다.</p>
+                    </div>
+                </div>
+
+                <div class="log-box">
+                    <div class="log-line">I (72) esp_image: segment 0: paddr=00010020 vaddr=3c020020 size=08670h ( 34416) map</div>
+                    <div class="log-line">I (86) esp_image: segment 1: paddr=00018698 vaddr=3fc92000 size=02920h ( 10528) load</div>
+                    <div class="log-line">I (89) esp_image: segment 2: paddr=0001afc0 vaddr=40374000 size=05058h ( 20568) load</div>
+                    <div class="log-line">I (99) esp_image: segment 3: paddr=00020020 vaddr=42000020 size=157ech ( 88044) map</div>
+                    <div class="log-line">I (117) esp_image: segment 4: paddr=00035814 vaddr=40379058 size=08f00h ( 36608) load</div>
+                    <div class="log-line">I (126) esp_image: segment 5: paddr=0003e71c vaddr=50000000 size=00020h (    32) load</div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>세그먼트</th>
+                                <th>유형</th>
+                                <th>저장 위치</th>
+                                <th>설명</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Segment 0</td>
+                                <td>Map</td>
+                                <td>Flash 직접 실행</td>
+                                <td>일반 함수 코드 (RAM 절약)</td>
+                            </tr>
+                            <tr>
+                                <td>Segment 1</td>
+                                <td>Load</td>
+                                <td>DRAM (데이터)</td>
+                                <td>전역 변수, 정적 변수</td>
+                            </tr>
+                            <tr>
+                                <td>Segment 2</td>
+                                <td>Load</td>
+                                <td>IRAM (명령어)</td>
+                                <td>인터럽트 등 고속 실행 코드</td>
+                            </tr>
+                            <tr>
+                                <td>Segment 3</td>
+                                <td>Map</td>
+                                <td>Flash 캐시</td>
+                                <td>문자열 상수, 읽기 전용 데이터</td>
+                            </tr>
+                            <tr>
+                                <td>Segment 5</td>
+                                <td>Load</td>
+                                <td>RTC 메모리</td>
+                                <td>딥슬립 중에도 유지되는 데이터</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="info-box">
+                    <p><strong>Load vs Map:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>Load:</strong> Flash → RAM 복사 (빠름, RAM 차지, 수정 가능)</li>
+                        <li><strong>Map:</strong> Flash 주소를 CPU에 매핑 (조금 느림, RAM 절약, 읽기 전용)</li>
+                    </ul>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question">🎯 퀴즈: 프로그램을 RAM으로 복사하지 않고 Flash에서 직접 실행하는 방식은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">A. Map</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">B. Load</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">C. Copy</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. Paste</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            <!-- Chapter 6: CPU 초기화 -->
+            <section class="chapter" id="chapter6" data-chapter="6">
+                <div class="chapter-header">
+                    <div class="chapter-number">6</div>
+                    <div class="chapter-title">
+                        <h2>CPU 초기화</h2>
+                        <p>두뇌를 깨우고 메인 코드를 실행할 준비를 합니다.</p>
+                    </div>
+                </div>
+
+                <div class="log-box">
+                    <div class="log-line">I (143) cpu_start: Multicore app</div>
+                    <div class="log-line">I (153) cpu_start: Pro cpu start user code</div>
+                    <div class="log-line">I (153) cpu_start: cpu freq: 160000000 Hz</div>
+                    <div class="log-line">I (158) app_init: Project name: ESP-Web-Monitor</div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>항목</th>
+                                <th>값</th>
+                                <th>설명</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>CPU 코어</td>
+                                <td>Multicore</td>
+                                <td>듀얼 코어 (Protocol + App) 사용</td>
+                            </tr>
+                            <tr>
+                                <td>주파수</td>
+                                <td>160MHz</td>
+                                <td>성능과 전력의 균형점</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question">🎯 퀴즈: ESP32-S3의 메인 CPU 클럭 속도는? (기본값)</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. 80MHz</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">B. 160MHz</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">C. 240MHz</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. 1GHz</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+
+
+            <!-- Chapter 7: 힙 초기화 -->
+            <section class="chapter" id="chapter7" data-chapter="7">
+                <div class="chapter-header">
+                    <div class="chapter-number">7</div>
+                    <div class="chapter-title">
+                        <h2>메모리 힙 초기화 - 작업 공간 만들기</h2>
+                        <p>동적 메모리 할당을 위한 준비</p>
+                    </div>
+                </div>
+
+                <div class="log-box">
+                    <div class="log-line log-info">I (191) heap_init: Initializing. RAM available for dynamic allocation:</div>
+                    <div class="log-line log-info">I (197) heap_init: At 3FC95190 len 00054580 (337 KiB): RAM</div>
+                    <div class="log-line log-info">I (202) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM</div>
+                    <div class="log-line log-info">I (207) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM</div>
+                    <div class="log-line log-info">I (213) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM</div>
+                </div>
+
+                <h3 style="color: var(--primary); margin: 2rem 0 1rem;">📊 힙 메모리 분포</h3>
+                <div style="margin: 1.5rem 0;">
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>영역 1: 메인 힙 (337KB)</span>
+                            <span>84.9%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 84.9%; justify-content: center;">337KB</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>영역 2: 보조 힙 (21KB)</span>
+                            <span>5.3%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 5.3%; background: linear-gradient(90deg, #10b981, #059669); justify-content: center;">21KB</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>영역 3: DRAM (32KB)</span>
+                            <span>8.1%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 8.1%; background: linear-gradient(90deg, #f59e0b, #d97706); justify-content: center;">32KB</div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>영역 4: RTCRAM (7KB)</span>
+                            <span>1.8%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 1.8%; background: linear-gradient(90deg, #64748b, #475569); justify-content: center;">7KB</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <div class="box-title">
+                        💡 힙(Heap)이란?
+                    </div>
+                    <p><strong>힙 = 동적 메모리</strong>: 프로그램 실행 중 필요할 때 할당하는 메모리입니다.</p>
+                    <ul style="margin-left: 2rem; margin-top: 1rem;">
+                        <li><code>malloc()</code>, <code>new</code>, <code>String</code> 등이 사용</li>
+                        <li>사용 후 반환 가능 (<code>free()</code>, <code>delete</code>)</li>
+                        <li>크기 가변적</li>
+                    </ul>
+                </div>
+
+                <div class="code-box" data-lang="C++" style="white-space: pre;">
+<span class="code-comment">// 힙 메모리 모니터링</span>
+<span class="code-keyword">void</span> <span class="code-function">printHeapInfo</span>() {
+    Serial.<span class="code-function">println</span>(<span class="code-string">"=== Heap Info ==="</span>);
+    Serial.<span class="code-function">printf</span>(<span class="code-string">"Total heap: %d bytes\n"</span>, ESP.<span class="code-function">getHeapSize</span>());
+    Serial.<span class="code-function">printf</span>(<span class="code-string">"Free heap: %d bytes\n"</span>, ESP.<span class="code-function">getFreeHeap</span>());
+    Serial.<span class="code-function">printf</span>(<span class="code-string">"Min free: %d bytes\n"</span>, ESP.<span class="code-function">getMinFreeHeap</span>());
+    
+    <span class="code-comment">// 여유 공간 경고</span>
+    <span class="code-keyword">if</span> (ESP.<span class="code-function">getFreeHeap</span>() < <span class="code-number">50000</span>) {
+        Serial.<span class="code-function">println</span>(<span class="code-string">"⚠️ 메모리 부족 경고!"</span>);
+    }
+}
+
+<span class="code-keyword">void</span> <span class="code-function">loop</span>() {
+    printHeapInfo();
+    <span class="code-function">delay</span>(<span class="code-number">5000</span>);
+}
+                </div>
+
+
+                <div class="warning-box">
+                    <div class="box-title">⚠️ 힙 메모리 문제 해결</div>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>메모리 부족 (OOM):</strong> 너무 큰 String이나 배열 사용 자제</li>
+                        <li><strong>단편화 (Fragmentation):</strong> <code>String</code> 대신 <code>char[]</code> 사용 권장</li>
+                    </ul>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question">🎯 퀴즈: 프로그램 실행 중 동적으로 할당되는 메모리 영역은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. Flash</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">B. ROM</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">C. Heap</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. Stack</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            <!-- Chapter 8: Flash 감지 -->
+            <section class="chapter" id="chapter8" data-chapter="8">
+                <div class="chapter-header">
+                    <div class="chapter-number">8</div>
+                    <div class="chapter-title">
+                        <h2>Flash 감지</h2>
+                        <p>외부 저장소의 크기와 제조사를 확인합니다.</p>
+                    </div>
+                </div>
+
+                <div class="log-box">
+                    <div class="log-line">I (219) spi_flash: detected chip: boya</div>
+                    <div class="log-line">I (221) spi_flash: flash io: dio</div>
+                    <div class="log-line log-warning">W (224) spi_flash: Detected size(16384k) larger than the size in the binary image header(2048k).</div>
+                </div>
+
+                <div class="warning-box">
+                    <div class="box-title">⚠️ 용량 불일치 경고</div>
+                    <p><strong>실제 용량(16MB) > 설정 용량(2MB)</strong></p>
+                    <p>칩은 16MB Flash를 가지고 있지만, 펌웨어 빌드 설정이 2MB로 되어 있어 나머지 14MB를 사용하지 못하고 있습니다. <code>menuconfig</code>에서 Flash Size 설정을 변경해야 전체를 사용할 수 있습니다.</p>
+                </div>
+
+
+
+                <div class="quiz-box">
+                    <div class="quiz-question"><i data-lucide="target" style="vertical-align: middle; margin-right: 8px;"></i> 퀴즈: Flash 용량을 전부 사용하지 못하는 가장 흔한 원인은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. 칩이 고장나서</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">B. 파티션 테이블 설정이 작아서</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">C. 전력이 부족해서</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. 2nd Bootloader 버그</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            <!-- Chapter 9: 앱 시작 -->
+            <section class="chapter" id="chapter9" data-chapter="9">
+                <div class="chapter-header">
+                    <div class="chapter-number">9</div>
+                    <div class="chapter-title">
+                        <h2>애플리케이션 시작</h2>
+                        <p>드디어 <code>app_main()</code> (Arduino의 setup)이 실행됩니다!</p>
+                    </div>
+                </div>
+
+                <div class="log-box">
+                    <div class="log-line">I (250) main_task: Started on CPU0</div>
+                    <div class="log-line">I (260) main_task: Calling app_main()</div>
+                    <div class="log-line" style="color: #00d4ff;">ESP-Web-Monitor by Jinho Jung!</div>
+                </div>
+
+                <div class="success-box" style="background: rgba(16, 185, 129, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--success);">
+                    <h3 style="color: var(--success); margin-bottom: 0.5rem;">🎉 부팅 성공!</h3>
+                    <p>전원 인가 후 약 <strong>0.26초</strong> 만에 사용자 코드가 실행되었습니다.</p>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question"><i data-lucide="target" style="vertical-align: middle; margin-right: 8px;"></i> 퀴즈: 사용자 코드(Arduino setup)를 호출하는 태스크는?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. idle_task</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">B. main_task</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">C. ipc_task</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. timer_task</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>            
+
+            <!-- Chapter 10: 타임라인 -->
+            <section class="chapter" id="chapter10" data-chapter="10">
+                <div class="chapter-header">
+                    <div class="chapter-number">10</div>
+                    <div class="chapter-title">
+                        <h2>전체 부팅 타임라인</h2>
+                        <p>0ms부터 260ms까지의 완벽한 여정</p>
+                    </div>
+                </div>
+
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-marker">0ms</div>
+                        <div class="timeline-content">
+                            <h4>전원 인가</h4>
+                            <p>🔌 전원이 들어오고 칩이 깨어납니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker">18ms</div>
+                        <div class="timeline-content">
+                            <h4>ROM 부트로더</h4>
+                            <p>칩 내장 코드가 실행되어 기본 초기화를 수행합니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker">40ms</div>
+                        <div class="timeline-content">
+                            <h4>파티션 테이블 읽기</h4>
+                            <p>Flash 메모리 구조를 파악합니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker">132ms</div>
+                        <div class="timeline-content">
+                            <h4>프로그램 로딩</h4>
+                            <p>6개 세그먼트를 메모리에 배치합니다. (60ms 소요)</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker">191ms</div>
+                        <div class="timeline-content">
+                            <h4>힙 초기화</h4>
+                            <p>397KB 동적 메모리를 준비합니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker">250ms</div>
+                        <div class="timeline-content">
+                            <h4>메인 태스크 시작</h4>
+                            <p>CPU0에서 메인 태스크가 실행됩니다.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-marker">260ms</div>
+                        <div class="timeline-content">
+                            <h4><i data-lucide="check-circle" style="vertical-align: middle;"></i> 부팅 완료!</h4>
+                            <p>app_main() 실행 - 사용자 코드 시작</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 style="color: var(--primary); margin: 2rem 0 1rem; display: flex; align-items: center; gap: 8px;"><i data-lucide="bar-chart-2"></i> 단계별 시간 분포</h3>
+                <div style="margin: 1.5rem 0;">
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>세그먼트 로딩</span>
+                            <span>60ms (23.1%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 23.1%;">23.1%</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>힙 초기화</span>
+                            <span>37ms (14.2%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 14.2%;">14.2%</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>파티션 확인</span>
+                            <span>29ms (11.2%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 11.2%;">11.2%</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span>기타</span>
+                            <span>134ms (51.5%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 51.5%; background: linear-gradient(90deg, #64748b, #475569);">51.5%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question"><i data-lucide="target" style="vertical-align: middle; margin-right: 8px;"></i> 퀴즈: ESP32-S3 부팅 과정 중 가장 시간이 많이 소요되는 작업은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. 파티션 확인</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">B. 프로그램(세그먼트) 로딩</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">C. ROM 부트로더</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. 메인 태스크 시작</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            <!-- Chapter 11: 문제 해결 -->
+            <section class="chapter" id="chapter11" data-chapter="11">
+                <div class="chapter-header">
+                    <div class="chapter-number">11</div>
+                    <div class="chapter-title">
+                        <h2>문제 해결 가이드</h2>
+                        <p>흔한 부팅 문제와 해결 방법</p>
+                    </div>
+                </div>
+
+                <div class="error-box">
+                    <div class="box-title">
+                        <i data-lucide="siren"></i> 문제 1: 아무것도 안 나옴 (Silent Boot)
+                    </div>
+                    <p><strong>증상:</strong> 시리얼 모니터에 아무 메시지도 표시되지 않음</p>
+                    <p style="margin-top: 1rem;"><strong>원인:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>전원 부족</li>
+                        <li>USB 케이블 불량 (데이터 선 없는 충전 전용 케이블)</li>
+                        <li>잘못된 시리얼 설정 (115200 baud 아님)</li>
+                        <li>칩 고장</li>
+                    </ul>
+                    <p style="margin-top: 1rem;"><strong>해결 방법:</strong></p>
+                    <ol style="margin-left: 2rem;">
+                        <li>✅ 5V 2A 어댑터 사용</li>
+                        <li>✅ USB 케이블 교체 (데이터 전송 가능한 케이블)</li>
+                        <li>✅ 시리얼 모니터 115200 baud 확인</li>
+                        <li>✅ USB 드라이버 설치 (CP2102, CH340)</li>
+                    </ol>
+                </div>
+
+                <div class="warning-box">
+                    <div class="box-title">
+                        <i data-lucide="triangle-alert"></i> 문제 2: 무한 재부팅 (Boot Loop)
+                    </div>
+                    <p><strong>증상:</strong> 계속 재부팅 반복</p>
+                    <div class="log-box" style="margin-top: 1rem;">
+                        <div class="log-line">ESP-ROM:esp32s3-20210327</div>
+                        <div class="log-line log-warning">rst:0x0c (RTCWDT_RTC_RESET)</div>
+                        <div class="log-line">... (반복)</div>
+                    </div>
+                    <p style="margin-top: 1rem;"><strong>원인:</strong> 와치독 타이머 만료, 무한루프, 크래시</p>
+                </div>
+
+                <div class="code-box" data-lang="C++" style="white-space: pre;">
+<span class="code-comment">// 와치독 타이머 설정</span>
+<span class="code-keyword">#include</span> <span class="code-string">"esp_task_wdt.h"</span>
+
+<span class="code-keyword">void</span> <span class="code-function">setup</span>() {
+    Serial.<span class="code-function">begin</span>(<span class="code-number">115200</span>);
+    
+    <span class="code-comment">// 30초 와치독 타이머</span>
+    esp_task_wdt_init(<span class="code-number">30</span>, <span class="code-keyword">true</span>);
+    esp_task_wdt_add(<span class="code-keyword">NULL</span>);
+    
+    Serial.<span class="code-function">println</span>(<span class="code-string">"와치독 설정 완료"</span>);
+}
+
+<span class="code-keyword">void</span> <span class="code-function">loop</span>() {
+    <span class="code-comment">// 긴 작업 수행</span>
+    <span class="code-keyword">for</span>(<span class="code-keyword">int</span> i = <span class="code-number">0</span>; i < <span class="code-number">1000</span>; i++) {
+        doWork();
+        
+        <span class="code-comment">// 주기적으로 와치독 리셋</span>
+        <span class="code-keyword">if</span>(i % <span class="code-number">100</span> == <span class="code-number">0</span>) {
+            esp_task_wdt_reset();
+            Serial.<span class="code-function">println</span>(<span class="code-string">"🔄 와치독 리셋"</span>);
+        }
+    }
+}
+                </div>
+
+                <div class="info-box">
+                    <div class="box-title">
+                        <i data-lucide="lightbulb"></i> 진단 팁
+                    </div>
+                    <p><strong>부팅 로그를 SD 카드에 저장하여 분석하세요:</strong></p>
+                </div>
+
+                <div class="code-box" data-lang="C++" style="white-space: pre;">
+<span class="code-comment">// SD 카드에 부팅 로그 저장</span>
+<span class="code-keyword">#include</span> <span class="code-string">&lt;SD.h&gt;</span>
+
+<span class="code-keyword">void</span> <span class="code-function">saveBootLog</span>() {
+    <span class="code-keyword">if</span>(!SD.<span class="code-function">begin</span>(<span class="code-number">5</span>)) {
+        Serial.<span class="code-function">println</span>(<span class="code-string">"SD 카드 초기화 실패"</span>);
+        <span class="code-keyword">return</span>;
+    }
+    
+    File log = SD.<span class="code-function">open</span>(<span class="code-string">"/boot.log"</span>, FILE_APPEND);
+    
+    log.<span class="code-function">println</span>(<span class="code-string">"=== Boot Log ==="</span>);
+    log.<span class="code-function">printf</span>(<span class="code-string">"Time: %lu\n"</span>, millis());
+    log.<span class="code-function">printf</span>(<span class="code-string">"Reset reason: %d\n"</span>, esp_reset_reason());
+    log.<span class="code-function">printf</span>(<span class="code-string">"Free heap: %d\n"</span>, ESP.<span class="code-function">getFreeHeap</span>());
+    
+    log.<span class="code-function">close</span>();
+    Serial.<span class="code-function">println</span>(<span class="code-string">"로그 저장 완료"</span>);
+}
+                </div>
+
+                <h3 style="color: var(--primary); margin: 2rem 0 1rem;">📋 문제 해결 체크리스트</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>증상</th>
+                                <th>원인</th>
+                                <th>해결 방법</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>아무것도 안 나옴</td>
+                                <td>전원/케이블/설정</td>
+                                <td>전원 확인, 케이블 교체, 115200 baud</td>
+                            </tr>
+                            <tr>
+                                <td>무한 재부팅</td>
+                                <td>와치독/크래시</td>
+                                <td>와치독 리셋, 코드 디버깅</td>
+                            </tr>
+                            <tr>
+                                <td>Brownout</td>
+                                <td>전압 부족</td>
+                                <td>5V 2A 어댑터, 커패시터</td>
+                            </tr>
+                            <tr>
+                                <td>Flash 오류</td>
+                                <td>손상/업로드 실패</td>
+                                <td>Flash 지우고 재업로드</td>
+                            </tr>
+                            <tr>
+                                <td>메모리 부족</td>
+                                <td>힙 오버플로</td>
+                                <td>메모리 사용 최적화</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Chapter 12: 용어 사전 -->
+            <section class="chapter" id="chapter12" data-chapter="12">
+                <div class="chapter-header">
+                    <div class="chapter-number">12</div>
+                    <div class="chapter-title">
+                        <h2>약어 및 용어 사전</h2>
+                        <p>헷갈리는 임베디드 용어 완전 정복</p>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                    <!-- A-G -->
+                    <div style="background: rgba(255,255,255,0.03); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
+                        <h3 style="color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1rem;">A - G</h3>
+                        <ul style="list-style: none; padding: 0;">
+                            <li style="margin-bottom: 0.8rem;"><strong>App CPU</strong><br><span style="color: var(--gray); font-size: 0.9em;">Application CPU (Core 1), 사용자 코드 실행</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>BLE</strong><br><span style="color: var(--gray); font-size: 0.9em;">Bluetooth Low Energy, 저전력 블루투스</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Bootloader</strong><br><span style="color: var(--gray); font-size: 0.9em;">OS나 메인 프로그램 실행을 돕는 초기 프로그램</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Brownout</strong><br><span style="color: var(--gray); font-size: 0.9em;">전압이 기준치 이하로 떨어져 시스템이 불안정한 상태</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>CISC</strong><br><span style="color: var(--gray); font-size: 0.9em;">Complex Instruction Set Computer, 복잡 명령어 집합 컴퓨터</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>DIO</strong><br><span style="color: var(--gray); font-size: 0.9em;">Dual I/O, 2개 라인을 사용하는 SPI 통신 모드</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>DRAM</strong><br><span style="color: var(--gray); font-size: 0.9em;">Dynamic RAM, 데이터 저장용 메모리 (주기적 리프레시 필요)</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>eFuse</strong><br><span style="color: var(--gray); font-size: 0.9em;">Electronic Fuse, 한 번 기록하면 수정 불가능한 메모리</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>ELF</strong><br><span style="color: var(--gray); font-size: 0.9em;">Executable and Linkable Format, 실행 파일 형식</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>ESP-IDF</strong><br><span style="color: var(--gray); font-size: 0.9em;">Espressif IoT Development Framework, 공식 개발 프레임워크</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Factory</strong><br><span style="color: var(--gray); font-size: 0.9em;">공장 출하 시 저장된 기본 프로그램 파티션</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Flash</strong><br><span style="color: var(--gray); font-size: 0.9em;">전원이 꺼져도 데이터가 유지되는 저장 장치</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>FPU</strong><br><span style="color: var(--gray); font-size: 0.9em;">Floating Point Unit, 부동소수점 연산 장치</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>FreeRTOS</strong><br><span style="color: var(--gray); font-size: 0.9em;">Free Real-Time Operating System, 실시간 운영체제</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>GPIO</strong><br><span style="color: var(--gray); font-size: 0.9em;">General Purpose Input/Output, 범용 입출력 핀</span></li>
+                        </ul>
+                    </div>
+
+                    <!-- H-P -->
+                    <div style="background: rgba(255,255,255,0.03); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
+                        <h3 style="color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1rem;">H - P</h3>
+                        <ul style="list-style: none; padding: 0;">
+                            <li style="margin-bottom: 0.8rem;"><strong>Heap</strong><br><span style="color: var(--gray); font-size: 0.9em;">프로그램 실행 중 동적으로 할당/해제되는 메모리 영역</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Hz</strong><br><span style="color: var(--gray); font-size: 0.9em;">Hertz, 주파수 단위 (1초당 진동 수)</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>IoT</strong><br><span style="color: var(--gray); font-size: 0.9em;">Internet of Things, 사물인터넷</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>IRAM</strong><br><span style="color: var(--gray); font-size: 0.9em;">Instruction RAM, 명령어를 저장하는 고속 메모리</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>ISR</strong><br><span style="color: var(--gray); font-size: 0.9em;">Interrupt Service Routine, 인터럽트 처리 함수</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>KiB</strong><br><span style="color: var(--gray); font-size: 0.9em;">Kibibyte, 1024 바이트 (이진 단위)</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Map</strong><br><span style="color: var(--gray); font-size: 0.9em;">Flash 메모리를 RAM처럼 매핑하여 직접 읽는 방식</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>MCU</strong><br><span style="color: var(--gray); font-size: 0.9em;">Micro Controller Unit, 초소형 컴퓨터 칩</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>MHz</strong><br><span style="color: var(--gray); font-size: 0.9em;">Megahertz, 100만 Hz</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>MMX</strong><br><span style="color: var(--gray); font-size: 0.9em;">Multi-Media Extensions, 멀티미디어 명령어 세트</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>MQTT</strong><br><span style="color: var(--gray); font-size: 0.9em;">Message Queuing Telemetry Transport, 경량 메시지 프로토콜</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>NVS</strong><br><span style="color: var(--gray); font-size: 0.9em;">Non-Volatile Storage, 비휘발성 저장소 (설정 저장 등)</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>OTA</strong><br><span style="color: var(--gray); font-size: 0.9em;">Over-The-Air, 무선 펌웨어 업데이트</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Partition</strong><br><span style="color: var(--gray); font-size: 0.9em;">Flash 메모리를 용도별로 나눈 구획</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>PC</strong><br><span style="color: var(--gray); font-size: 0.9em;">Program Counter, 현재 실행 중인 명령어 주소를 가리키는 레지스터</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>PHY</strong><br><span style="color: var(--gray); font-size: 0.9em;">Physical Layer, 물리 계층 (무선 통신 하드웨어 제어)</span></li>
+                        </ul>
+                    </div>
+
+                    <!-- R-Z -->
+                    <div style="background: rgba(255,255,255,0.03); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
+                        <h3 style="color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1rem;">R - Z</h3>
+                        <ul style="list-style: none; padding: 0;">
+                            <li style="margin-bottom: 0.8rem;"><strong>RAM</strong><br><span style="color: var(--gray); font-size: 0.9em;">Random Access Memory, 읽기/쓰기 가능한 메모리</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>RISC</strong><br><span style="color: var(--gray); font-size: 0.9em;">Reduced Instruction Set Computer, 축소 명령어 집합 컴퓨터</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>RNG</strong><br><span style="color: var(--gray); font-size: 0.9em;">Random Number Generator, 난수 생성기</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>ROM</strong><br><span style="color: var(--gray); font-size: 0.9em;">Read-Only Memory, 읽기 전용 메모리 (변경 불가)</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>RTC Memory</strong><br><span style="color: var(--gray); font-size: 0.9em;">Real-Time Clock RAM, 딥슬립 중에도 유지되는 메모리</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Segment</strong><br><span style="color: var(--gray); font-size: 0.9em;">프로그램이 메모리에 로딩될 때 나뉘는 단위</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>SHA256</strong><br><span style="color: var(--gray); font-size: 0.9em;">Secure Hash Algorithm 256-bit, 데이터 무결성 검증 해시</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>SIMD</strong><br><span style="color: var(--gray); font-size: 0.9em;">Single Instruction Multiple Data, 하나의 명렁어로 여러 데이터 처리</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>SPI</strong><br><span style="color: var(--gray); font-size: 0.9em;">Serial Peripheral Interface, 칩 간 직렬 통신</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>SRAM</strong><br><span style="color: var(--gray); font-size: 0.9em;">Static RAM, 고속 메모리 (리프레시 불필요)</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>UART</strong><br><span style="color: var(--gray); font-size: 0.9em;">Universal Asynchronous Receiver/Transmitter, 범용 비동기 송수신기 (시리얼)</span></li>
+                            <li style="margin-bottom: 0.8rem;"><strong>Watchdog</strong><br><span style="color: var(--gray); font-size: 0.9em;">시스템 다운 시 강제 재부팅하게 하는 감시 타이머</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question"><i data-lucide="target" style="vertical-align: middle; margin-right: 8px;"></i> 퀴즈: 'Brownout'의 의미는?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">A. 칩이 과열됨</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">B. 전압 부족 상태</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">C. 메모리 누수</div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">D. 무선 신호 간섭</div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+            </section>
+
+            </section>
+
+            <!-- Chapter 13: 전체 부팅 로그 -->
+            <section class="chapter" id="chapter13" data-chapter="13">
+                <div class="chapter-header">
+                    <div class="chapter-number">13</div>
+                    <div class="chapter-title">
+                        <h2>전체 부팅 로그</h2>
+                        <p>처음부터 끝까지, 한눈에 보는 부팅 메시지</p>
+                    </div>
+                </div>
+
+                <div class="code-box" style="max-height: 800px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; white-space: pre;">
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x28 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x40377786
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x158c   (5,516 bytes)
+load:0x403c8700,len:0xd24    (3,364 bytes)
+load:0x403cb700,len:0x2f34   (12,084 bytes)
+entry 0x403c8924
+I (18) boot: ESP-IDF v5.5.2 2nd stage bootloader
+I (18) boot: compile time Feb  5 2026 14:16:34
+I (18) boot: Multicore bootloader
+I (18) boot: chip revision: v0.2
+I (21) boot: efuse block revision: v1.3
+I (25) boot.esp32s3: Boot SPI Speed : 80MHz
+I (28) boot.esp32s3: SPI Mode       : DIO
+I (36) boot: Enabling RNG early entropy source...
+I (36) boot: SPI Flash: detected @0x10000000, size 4MB
+I (38) boot: Initializing CPU: PRO and APP cores
+I (38) boot: Initializing cache: D-Cache and I-Cache
+I (40) boot: Partition Table:
+I (43) boot: ## Label            Usage          Type ST Offset   Length
+I (49) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (56) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (62) boot:  2 factory          factory app      00 00 00010000 00100000
+I (69) boot: End of partition table
+I (72) esp_image: segment 0: paddr=00010020 vaddr=3c020020 size=08670h ( 34416) map
+I (86) esp_image: segment 1: paddr=00018698 vaddr=3fc92000 size=02920h ( 10528) load
+I (89) esp_image: segment 2: paddr=0001afc0 vaddr=40374000 size=05058h ( 20568) load
+I (99) esp_image: segment 3: paddr=00020020 vaddr=42000020 size=157ech ( 88044) map
+I (117) esp_image: segment 4: paddr=00035814 vaddr=40379058 size=08f00h ( 36608) load
+I (126) esp_image: segment 5: paddr=0003e71c vaddr=50000000 size=00020h (    32) load
+I (143) cpu_start: Multicore app
+I (153) cpu_start: Pro cpu start user code
+I (153) cpu_start: cpu freq: 160000000 Hz
+I (158) app_init: Project name: ESP-Web-Monitor
+I (163) app_init: App version:      1
+I (191) heap_init: Initializing. RAM available for dynamic allocation:
+I (197) heap_init: At 3FC95190 len 00054580 (337 KiB): RAM
+I (202) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (207) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (213) heap_init: At 600FE000 len 00001FE8 (7 KiB): RTCRAM
+I (219) spi_flash: detected chip: boya
+I (221) spi_flash: flash io: dio
+W (224) spi_flash: Detected size(16384k) larger than the size in the binary image header(2048k).
+I (250) main_task: Started on CPU0
+I (260) main_task: Calling app_main()
+                </div>
+            </section>
+
+            <!-- 최종 요약 -->
+            <section class="chapter" id="summary">
+                <div class="chapter-header">
+                    <div class="chapter-number">✨</div>
+                    <div class="chapter-title">
+                        <h2>학습 완료!</h2>
+                        <p>ESP32-S3 부팅 과정을 완벽하게 이해했습니다</p>
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <div class="box-title">
+                        🎓 배운 내용 정리
+                    </div>
+                    <ul style="margin-left: 2rem; margin-top: 1rem;">
+                        <li><i data-lucide="check" style="width:14px;"></i> 부팅의 의미와 전체 프로세스 (260ms)</li>
+                        <li><i data-lucide="check" style="width:14px;"></i> ROM 부트로더와 리셋 원인</li>
+                        <li><i data-lucide="check" style="width:14px;"></i> 파티션 테이블과 메모리 구조</li>
+                        <li><i data-lucide="check" style="width:14px;"></i> 세그먼트 로딩과 메모리 배치</li>
+                        <li><i data-lucide="check" style="width:14px;"></i> CPU 초기화와 멀티코어 활용</li>
+                        <li><i data-lucide="check" style="width:14px;"></i> 힙 메모리 관리 (397KB)</li>
+                        <li><i data-lucide="check" style="width:14px;"></i> Flash 메모리 최적화 (16MB 활용)</li>
+                        <li><i data-lucide="check" style="width:14px;"></i> 흔한 문제와 해결 방법</li>
+                    </ul>
+                </div>
+
+                <div class="quiz-box">
+                    <div class="quiz-question">🏆 최종 퀴즈: ESP32-S3 부팅 시간은?</div>
+                    <div class="quiz-options">
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">
+                            A. 2.6초
+                        </div>
+                        <div class="quiz-option" onclick="checkAnswer(this, true)">
+                            B. 260ms (0.26초)
+                        </div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">
+                            C. 26ms
+                        </div>
+                        <div class="quiz-option" onclick="checkAnswer(this, false)">
+                            D. 2600ms (2.6초)
+                        </div>
+                    </div>
+                    <div class="quiz-result"></div>
+                </div>
+
+                <div style="text-align: center; margin-top: 3rem; padding: 2rem; background: rgba(0, 212, 255, 0.05); border-radius: 12px;">
+                    <h3 style="color: var(--primary); margin-bottom: 1rem;">🚀 다음 단계</h3>
+                    <p style="margin-bottom: 1.5rem;">이제 직접 ESP32를 사용하여 프로젝트를 시작해보세요!</p>
+                    <button class="nav-btn" style="font-size: 1rem; padding: 1rem 2rem;" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+                        처음부터 다시 보기 ↑
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 플로팅 버튼 -->
+    <button class="float-btn" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="맨 위로">
+        <i data-lucide="arrow-up"></i>
+    </button>
+    <script>
+        lucide.createIcons();
+    </script>
+    <script>
+        function scrollToHardware() {
+            const hardware = document.getElementById('hardware');
+            if (hardware) {
+                hardware.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        // 사이드바 활성화
+        function scrollToChapter(num) {
+            const chapter = document.getElementById('chapter' + num);
+            if (chapter) {
+                chapter.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                updateActiveLink(num);
+            }
+        }
+
+        function updateActiveLink(num) {
+            document.querySelectorAll('.sidebar-menu a').forEach(link => {
+                link.classList.remove('active');
+            });
+            const activeLink = document.querySelector(`.sidebar-menu a[href="#chapter${num}"]`);
+            if (activeLink) {
+                activeLink.classList.add('active');
+            }
+        }
+
+        // 스크롤 감지
+        window.addEventListener('scroll', () => {
+            const chapters = document.querySelectorAll('.chapter');
+            let currentChapter = 1;
+
+            chapters.forEach(chapter => {
+                const rect = chapter.getBoundingClientRect();
+                if (rect.top <= 150) {
+                    currentChapter = parseInt(chapter.dataset.chapter) || 1;
+                }
+            });
+
+            updateActiveLink(currentChapter);
+            updateProgress(currentChapter);
+        });
+
+        // 진행도 업데이트
+        function updateProgress(currentChapter) {
+            const totalChapters = 13;
+            const progress = (currentChapter / totalChapters) * 100;
+            const progressBar = document.getElementById('learningProgress');
+            if (progressBar) {
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = Math.round(progress) + '%';
+            }
+        }
+
+        // 퀴즈 체크
+        function checkAnswer(element, isCorrect) {
+            const options = element.parentElement.querySelectorAll('.quiz-option');
+            const result = element.parentElement.nextElementSibling;
+
+            options.forEach(opt => {
+                opt.style.pointerEvents = 'none';
+                if (opt === element) {
+                    opt.classList.add(isCorrect ? 'correct' : 'wrong');
+                }
+            });
+
+            result.classList.add('show');
+            result.className = 'quiz-result show ' + (isCorrect ? 'info-box' : 'error-box');
+            result.innerHTML = isCorrect 
+                ? '<strong><i data-lucide="check-circle" style="width:16px; vertical-align:middle;"></i> 정답입니다!</strong><p>잘 이해하셨네요! 계속 학습을 진행하세요.</p>'
+                : '<strong><i data-lucide="x-circle" style="width:16px; vertical-align:middle;"></i> 틀렸습니다.</strong><p>다시 한번 내용을 확인해보세요.</p>';
+            
+            lucide.createIcons(); // Re-init icons in dynamic content
+        }
+
+        // 챕터 필터
+        function showChapter(num) {
+            const chapters = document.querySelectorAll('.chapter');
+            chapters.forEach(chapter => {
+                chapter.style.display = 'none';
+            });
+            const target = document.getElementById('chapter' + num);
+            if (target) {
+                target.style.display = 'block';
+                target.scrollIntoView({ behavior: 'smooth' });
+            }
+            
+            // 버튼 활성화
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+
+        function showAllChapters() {
+            const chapters = document.querySelectorAll('.chapter');
+            chapters.forEach(chapter => {
+                chapter.style.display = 'block';
+            });
+            
+            // 버튼 활성화
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        // 초기 로드
+        document.addEventListener('DOMContentLoaded', () => {
+            // 로그 라인 애니메이션
+            const logLines = document.querySelectorAll('.log-line');
+            logLines.forEach((line, index) => {
+                line.style.animationDelay = (index * 0.1) + 's';
+            });
+
+            // 초기 진행도
+            updateProgress(1);
+        });
+
+        // 코드 복사 기능 (코드 박스 클릭 시)
+        document.querySelectorAll('.code-box').forEach(box => {
+            box.style.cursor = 'pointer';
+            box.title = '클릭하여 코드 복사';
+            box.addEventListener('click', () => {
+                const code = box.textContent;
+                navigator.clipboard.writeText(code).then(() => {
+                    const originalBg = box.style.background;
+                    box.style.background = 'rgba(16, 185, 129, 0.2)';
+                    setTimeout(() => {
+                        box.style.background = originalBg;
+                    }, 500);
+                });
+            });
+        });
+    </script>
+</body>
+</html>
