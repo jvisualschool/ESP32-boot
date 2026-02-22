@@ -21,19 +21,19 @@ ESP32 시리즈는 강력한 성능을 자랑하지만, 전원이 켜진 후 실
 ## 📸 프로젝트 스크린샷
 
 ### 1. 메인 가이드 및 하드웨어 개요
-![Main Screenshot 1](./screenshot/screenshot1.webp)
+![Main Screenshot 1](https://jvibeschool.org/ESP32-BOOT/screenshot/screenshot1.webp)
 *프로젝트의 전반적인 레이아웃과 하드웨어 스펙 정보를 확인할 수 있습니다.*
 
 ### 2. 가독성 높은 챕터 구성
-![Chapter Details](./screenshot/screenshot2.webp)
+![Chapter Details](https://jvibeschool.org/ESP32-BOOT/screenshot/screenshot2.webp)
 *부팅 단계를 논리적으로 구분하여 상세한 설명과 함께 제공합니다.*
 
 ### 3. 터미널 로그 및 시각화 자료
-![Logs and Timeline](./screenshot/screenshot3.webp)
+![Logs and Timeline](https://jvibeschool.org/ESP32-BOOT/screenshot/screenshot3.webp)
 *실제 부팅 로그 시뮬레이션과 인터랙티브 요소를 통해 이해도를 높입니다.*
 
 ### 4. 퀴즈를 통한 학습 확인
-![Quiz System](./screenshot/screenshot4.webp)
+![Quiz System](https://jvibeschool.org/ESP32-BOOT/screenshot/screenshot4.webp)
 *각 단계를 마칠 때마다 퀴즈를 통해 학습 내용을 복습합니다.*
 
 ## 🛠 기술 스택
